@@ -29,7 +29,6 @@ async def fetch_services_from_db() -> list:
             "foreignField": "_id", "as": "category_info"
         }},
         {"$unwind": {"path": "$category_info", "preserveNullAndEmptyArrays": True}},
-<<<<<<< HEAD
         {"$lookup": {
             "from": "serviceproviders", "localField": "providers",
             "foreignField": "_id", "as": "provider_info"
@@ -40,11 +39,6 @@ async def fetch_services_from_db() -> list:
             "category": "$category_info", "updatedAt": 1,
             "location": "$provider_info.exactLocation",
             "popularityScore": "$provider_info.popularityScore"
-=======
-        {"$project": {
-            "_id": 1, "name": 1, "description": 1, "priceInfo": 1, "avgRating": 1,
-            "category": "$category_info", "updatedAt": 1
->>>>>>> eaee55d441f248a9c8b8c1753f9a0c6e40ce403f
         }}
     ]
     cursor = services_collection.aggregate(pipeline)
@@ -80,7 +74,6 @@ async def fetch_one_service(service_id: str) -> Dict[str, Any] | None:
         {"$lookup": {"from": "categories", "localField": "categories",
                      "foreignField": "_id", "as": "category_info"}},
         {"$unwind": {"path": "$category_info", "preserveNullAndEmptyArrays": True}},
-<<<<<<< HEAD
         {"$lookup": {"from": "serviceproviders", "localField": "providers",
                      "foreignField": "_id", "as": "provider_info"}},
         {"$unwind": {"path": "$provider_info", "preserveNullAndEmptyArrays": True}},
@@ -124,10 +117,3 @@ async def fetch_collaborative_matrix() -> Dict[str, Dict[str, float]]:
         matrix[user_id][service_id] = max(existing_rating, rating)
         
     return matrix
-=======
-        {"$project": {"_id": 1, "name": 1, "description": 1, "priceInfo": 1,
-                      "avgRating": 1, "category": "$category_info", "updatedAt": 1}}
-    ]
-    result = await db[settings.COLLECTION_NAME].aggregate(pipeline).to_list(1)
-    return serialize_mongo_doc(result[0]) if result else None
->>>>>>> eaee55d441f248a9c8b8c1753f9a0c6e40ce403f
