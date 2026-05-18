@@ -37,7 +37,7 @@ async def fetch_services_from_db() -> list:
         {"$unwind": {"path": "$provider_info", "preserveNullAndEmptyArrays": True}},
         {"$project": {
             "_id": 1, "name": 1, "description": 1, "priceInfo": 1, "avgRating": 1,
-            "category": "$category_info", "updatedAt": 1,
+            "images": 1, "category": "$category_info", "updatedAt": 1,
             "location": "$provider_info.exactLocation",
             "popularityScore": "$provider_info.popularityScore"
         }}
@@ -79,7 +79,7 @@ async def fetch_one_service(service_id: str) -> Dict[str, Any] | None:
                      "foreignField": "_id", "as": "provider_info"}},
         {"$unwind": {"path": "$provider_info", "preserveNullAndEmptyArrays": True}},
         {"$project": {"_id": 1, "name": 1, "description": 1, "priceInfo": 1,
-                      "avgRating": 1, "category": "$category_info", "updatedAt": 1,
+                      "avgRating": 1, "images": 1, "category": "$category_info", "updatedAt": 1,
                       "location": "$provider_info.exactLocation",
                       "popularityScore": "$provider_info.popularityScore"}}
     ]
