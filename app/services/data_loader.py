@@ -9,11 +9,12 @@ logger = logging.getLogger(__name__)
 
 
 def serialize_mongo_doc(doc):
-    if "_id" in doc and isinstance(doc["_id"], ObjectId):
-        doc["_id"] = str(doc["_id"])
-    if "category" in doc and doc.get("category") and "_id" in doc["category"]:
-        if isinstance(doc["category"]["_id"], ObjectId):
-            doc["category"]["_id"] = str(doc["category"]["_id"])
+    if isinstance(doc, dict):
+        return {k: serialize_mongo_doc(v) for k, v in doc.items()}
+    elif isinstance(doc, list):
+        return [serialize_mongo_doc(v) for v in doc]
+    elif isinstance(doc, ObjectId):
+        return str(doc)
     return doc
 
 
