@@ -1,31 +1,31 @@
-# FILE: Dockerfile (Corrected)
+# FILE: Dockerfile
 
-# 1. Start with a lean official Python image
+# --- Stage 1: Build Stage ---
+FROM python:3.11-slim as builder
+WORKDIR /app
+RUN pip install --upgrade pip
+COPY ./app/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# --- Stage 2: Final Stage ---
 FROM python:3.11-slim
+WORKDIR /app
 
-# 2. Set the working directory inside the container
-WORKDIR /code
+# Copy installed packages and executables
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
-# --- FIX: Set the Hugging Face cache directory to a local folder ---
-# This tells sentence-transformers to download models inside /code/.cache
-# instead of the root directory, which avoids permission errors.
-ENV HF_HOME /code/.cache
+# Create a non-root user and set permissions for deployment
+RUN useradd -m appuser
+RUN mkdir -p /data/huggingface_cache && chown -R appuser:appuser /app /data
+USER appuser
 
-# 3. Create the 'data' directory AS THE ROOT USER
-RUN mkdir -p /code/data
+# Copy the application source code
+COPY . .
+RUN pip install --no-cache-dir -e .
 
-# 4. Copy the requirements file and install dependencies
-COPY ./requirements.txt /code/requirements.txt
-RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
+# Expose the port for the hosting environment
+EXPOSE 7860
 
-# 5. Copy the rest of your application code
-COPY ./ /code/
-
-# 6. Change ownership of the entire /code directory to a non-root user
-RUN chown -R 1000:1000 /code
-
-# 7. Switch to the non-root user for security
-USER 1000
-
-# 8. This command will be run when the container starts
-CMD ["python", "run.py"]
+# Define the production command
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860"]

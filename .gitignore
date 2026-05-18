@@ -1,15 +1,9 @@
 # FILE: .gitignore
-
-# Python
 __pycache__/
 *.pyc
 venv/
 *.env
 *.egg-info/
-
-# Local data cache and index
 /data/
-
-# IDE files
 .vscode/
 .idea/

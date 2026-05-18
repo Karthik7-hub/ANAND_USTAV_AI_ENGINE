@@ -4,9 +4,6 @@ from typing import List
 
 
 class Settings(BaseSettings):
-    """
-    Application settings loaded from environment variables and .env file.
-    """
     model_config = SettingsConfigDict(
         env_file='.env',
         env_file_encoding='utf-8',
@@ -15,23 +12,21 @@ class Settings(BaseSettings):
 
     # --- Database Settings ---
     MONGODB_URL: str
-    DATABASE_NAME: str = "anandutsav"
+    DATABASE_NAME: str = "anandutsav_db"
     COLLECTION_NAME: str = "services"
 
-    # --- Machine Learning Model ---
-    MODEL_NAME: str = "all-mpnet-base-v2"
+    # --- ✅ New, Faster Machine Learning Model ---
+    MODEL_NAME: str = "all-MiniLM-L6-v2"
 
-    # --- File Paths ---
-    EMBEDDINGS_PATH: str = "data/embeddings.npy"
-    ITEMS_PATH: str = "data/items.json"
-    FAISS_INDEX_PATH: str = "data/faiss.index"
+    # --- File Paths (for persistent disk) ---
+    ITEMS_PATH: str = "/data/items.json"
+    FAISS_INDEX_PATH: str = "/data/faiss.index"
 
-    # --- Search Algorithm ---
+    # --- Search Algorithm Tuning ---
     CATEGORY_BOOST: float = 0.1
-    KEYWORD_BOOST: float = 0.05
-
-    # --- Background Tasks ---
-    REFRESH_SCHEDULE_SECONDS: int = 3600
+    SERVICE_NAME_WEIGHT: float = 0.6
+    CATEGORY_NAME_WEIGHT: float = 0.3
+    SERVICE_DESCRIPTION_WEIGHT: float = 0.1
 
     # --- Predefined Data ---
     PREDEFINED_CATEGORIES: List[str] = [

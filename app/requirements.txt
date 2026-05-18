@@ -8,4 +8,4 @@ numpy
 motor
 python-dotenv
 setuptools
-pymongo[srv]
+cachetools

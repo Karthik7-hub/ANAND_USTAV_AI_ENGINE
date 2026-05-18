@@ -1,0 +1,14 @@
+# FILE: .dockerignore
+.git
+.gitignore
+Dockerfile
+.dockerignore
+__pycache__/
+*.pyc
+venv/
+*.egg-info/
+data/
+.env
+.vscode/
+.idea/
+README.md

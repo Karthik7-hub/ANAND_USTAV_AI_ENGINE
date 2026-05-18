@@ -1,76 +1,105 @@
 # FILE: app/main.py
-from fastapi import FastAPI, HTTPException
+# pyrefly: ignore [missing-import]
+from fastapi import FastAPI, HTTPException, Query
 from contextlib import asynccontextmanager
 import asyncio
 import logging
+import os
+from cachetools import TTLCache
+from typing import Optional
+
 from app.config import settings
 from app.models.pydantic_models import (
-    SearchResponse, StatusResponse, HealthResponse, RefreshResponse)
-from app.services.data_loader import fetch_and_extract_items
-from app.services.encoder import encode_texts, get_model
+    SearchResponse, StatusResponse, HealthResponse, RefreshResponse, AutocompleteResponse,
+    ContentRecommendationResponse, CollaborativeRecommendationResponse, RatingMatrixResponse, UpdateRatingRequest
+)
+from app.services.data_loader import fetch_and_extract_items, fetch_one_service
+from app.services.encoder import create_blended_embeddings, get_model
 from app.models.faiss_manager import FaissManager
 from app.services.hybrid_search import HybridSearchEngine
-from app.utils.persistence import load_items, save_items, save_embeddings
-from app.utils.database import connect_to_mongo, close_mongo_connection
+from app.services.recommender import recommender
+from app.utils.persistence import load_items, save_items
+from app.utils.database import connect_to_mongo, close_mongo_connection, get_database
 from app.utils.locks import data_lock
+# pyrefly: ignore [missing-import]
 from fastapi.middleware.cors import CORSMiddleware
 
-# --- Logging Configuration ---
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # --- Global State ---
 faiss_manager: FaissManager | None = None
 hybrid_engine: HybridSearchEngine | None = None
+search_cache = TTLCache(maxsize=500, ttl=300)
 
-# --- Core Logic ---
+# --- Real-Time Update Logic ---
 
 
-async def _update_search_engine(items: list[dict]):
-    global faiss_manager, hybrid_engine
+async def _update_single_item(service_id: str):
+    logger.info(f"Real-time update triggered for service ID: {service_id}")
+    async with data_lock:
+        item = await fetch_one_service(service_id)
+        if item:
+            embedding = create_blended_embeddings([item])
+            faiss_manager.update_items([item], embedding)
+            hybrid_engine.update_item_in_map(item)
+            logger.info(
+                f"Successfully updated item {service_id} in real-time.")
+        else:
+            faiss_manager.remove_items([service_id])
+            hybrid_engine.remove_item_from_map(service_id)
+            logger.info(f"Removed item {service_id} in real-time.")
+        save_items(hybrid_engine.items)
+        faiss_manager.save()
 
-    if not items:
-        logger.warning("Update skipped: no items provided.")
+
+async def watch_mongodb_changes():
+    db = get_database()
+    if db is None:
+        logger.error("Cannot start MongoDB watcher: No database connection.")
         return
 
-    logger.info(f"Starting engine update with {len(items)} items.")
+    try:
+        change_stream = db[settings.COLLECTION_NAME].watch()
+        logger.info("MongoDB Change Stream watcher started...")
+        async for change in change_stream:
+            doc_id = str(change['documentKey']['_id'])
+            if change['operationType'] in ['insert', 'update', 'replace', 'delete']:
+                asyncio.create_task(_update_single_item(doc_id))
+    except Exception as e:
+        logger.error(
+            f"MongoDB Change Stream watcher failed: {e}. Real-time updates are disabled.")
 
-    item_names = [item.get("name", "") for item in items]
-    embeddings = encode_texts(item_names)
-    dim = embeddings.shape[1]
+# --- Core Engine Management ---
+
+
+async def _rebuild_search_engine_full():
+    logger.info("Starting full engine rebuild...")
+    global faiss_manager, hybrid_engine
+
+    items = await fetch_and_extract_items()
+    model_dim = get_model().get_sentence_embedding_dimension()
+
+    # Fetch real user booking interactions
+    from app.services.data_loader import fetch_collaborative_matrix
+    real_matrix = await fetch_collaborative_matrix()
 
     async with data_lock:
-        new_fm = FaissManager(dim)
-        if len(items) < 10000:
-            new_fm.build_index_flat_ip(embeddings)
+        faiss_manager = FaissManager(dim=model_dim)
+        if not items:
+            faiss_manager.build_index([], None)
+            hybrid_engine = HybridSearchEngine(faiss_manager, [])
         else:
-            new_fm.build_hnsw(embeddings)
-
-        new_fm.save()
-        save_items(items, settings.ITEMS_PATH)
-        save_embeddings(embeddings, settings.EMBEDDINGS_PATH)
-
-        faiss_manager = new_fm
-        hybrid_engine = HybridSearchEngine(faiss_manager, indexed_items=items)
-        logger.info(f"Successfully updated engine with {len(items)} items.")
-
-
-async def refresh_data_task():
-    logger.info("Executing data refresh task...")
-    try:
-        new_items = await fetch_and_extract_items()
-        await _update_search_engine(new_items)
-    except Exception:
-        logger.exception("Data refresh task failed.")
-
-
-async def periodic_refresh_scheduler():
-    while True:
-        await asyncio.sleep(settings.REFRESH_SCHEDULE_SECONDS)
-        await refresh_data_task()
+            embeddings = create_blended_embeddings(items)
+            faiss_manager.build_index(items, embeddings)
+            hybrid_engine = HybridSearchEngine(faiss_manager, items)
+            save_items(items)
+            faiss_manager.save()
+        
+        # Initialize rating matrix in recommendation sandbox
+        recommender.setup_collaborative_matrix(items if items else [], real_matrix=real_matrix)
+        logger.info(f"Full engine rebuild complete with {len(items)} items.")
 
 # --- FastAPI Lifespan ---
 
@@ -82,83 +111,149 @@ async def lifespan(app: FastAPI):
 
     items = load_items()
     if items:
-        logger.info(f"Found {len(items)} items on disk.")
+        logger.info("Loading persisted engine from disk...")
         model_dim = get_model().get_sentence_embedding_dimension()
-        fm = FaissManager(dim=model_dim)
-        if fm.load():
-            global faiss_manager, hybrid_engine
-            faiss_manager = fm
-            hybrid_engine = HybridSearchEngine(
-                faiss_manager, indexed_items=items)
+        global faiss_manager, hybrid_engine
+        faiss_manager = FaissManager(dim=model_dim)
+        if faiss_manager.load():
+            hybrid_engine = HybridSearchEngine(faiss_manager, items)
+            # Initialize rating matrix in recommendation sandbox
+            from app.services.data_loader import fetch_collaborative_matrix
+            real_matrix = await fetch_collaborative_matrix()
+            recommender.setup_collaborative_matrix(items, real_matrix=real_matrix)
             logger.info("Successfully loaded persisted search engine.")
         else:
-            logger.warning("Items found but failed to load index. Refreshing.")
-            await refresh_data_task()
+            asyncio.create_task(_rebuild_search_engine_full())
     else:
-        logger.info("No data found. Triggering initial data fetch.")
-        await refresh_data_task()
+        asyncio.create_task(_rebuild_search_engine_full())
 
-    asyncio.create_task(periodic_refresh_scheduler())
+    asyncio.create_task(watch_mongodb_changes())
 
     yield
 
     await close_mongo_connection()
     logger.info("Application shutdown.")
 
-
-app = FastAPI(title="Smart Search API", lifespan=lifespan)
+app = FastAPI(title="Smart Search API", version="2.0.0", lifespan=lifespan)
 
 # --- API Endpoints ---
+# --- ✅ 2. ADD THE CORS MIDDLEWARE CONFIGURATION ---
+# This is the "approved guest list" for your API.
+origins = [
+    "https://anand-utsav.vercel.app",  # Your production front-end
+    # Your local development front-end (Vite default)
+    "http://localhost:5173",
+    # Your local development front-end (Create React App default)
+    "http://localhost:3000",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],  # Allows all methods (GET, POST, etc.)
     allow_headers=["*"],  # Allows all headers
 )
+# --- END OF NEW SECTION ---
 
 
-@app.get("/", response_model=StatusResponse)
+@app.get("/", tags=["API"])
 def read_root():
-    return StatusResponse(message="Smart Search API is running.")
+    """Root Endpoint."""
+    return {"message": "Anand Utsav ML Intelligence Backend is running successfully."}
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.get("/health", response_model=HealthResponse, tags=["Health"])
 def health_check():
-    is_ready = all([hybrid_engine, faiss_manager, faiss_manager.index])
-    return HealthResponse(status="ready" if is_ready else "initializing")
+    if hybrid_engine is None or faiss_manager is None or faiss_manager.index is None:
+        return HealthResponse(status="initializing")
+    try:
+        asyncio.run(hybrid_engine.search("test"))
+        return HealthResponse(status="ok")
+    except Exception as e:
+        logger.error(f"Health check failed during test search: {e}")
+        return HealthResponse(status="unhealthy")
 
 
-@app.post("/refresh", response_model=RefreshResponse)
+@app.post("/refresh", response_model=RefreshResponse, tags=["Admin"])
 async def trigger_refresh():
-    async with data_lock:
-        new_items = await fetch_and_extract_items()
-        if not new_items:
-            raise HTTPException(
-                status_code=502,
-                detail="Failed to fetch new items from the data source."
-            )
-
-        await _update_search_engine(new_items)
-        return RefreshResponse(
-            message="Successfully refreshed data and rebuilt index.",
-            n_items=len(new_items)
-        )
+    await _rebuild_search_engine_full()
+    return RefreshResponse(
+        message="Full data refresh and index rebuild complete.",
+        n_items=len(hybrid_engine.items) if hybrid_engine else 0
+    )
 
 
-@app.get("/search", response_model=SearchResponse)
-async def search(q: str, k: int = 25):
+@app.get("/autocomplete", response_model=AutocompleteResponse, tags=["Search"])
+def autocomplete(prefix: str):
     if hybrid_engine is None:
         raise HTTPException(
-            status_code=503,
-            detail="Search engine is not ready. Please wait for initialization"
-        )
+            status_code=503, detail="Search engine is not ready.")
+    suggestions = hybrid_engine.get_autocomplete_suggestions(prefix)
+    return AutocompleteResponse(suggestions=suggestions)
 
-    if not q:
+
+@app.get("/search", response_model=SearchResponse, tags=["Search"])
+async def search(q: str, lat: Optional[float] = None, lng: Optional[float] = None, max_dist_km: float = 50.0):
+    """Performs a simplified semantic search with optional location filtering."""
+    if hybrid_engine is None:
         raise HTTPException(
-            status_code=400,
-            detail="Query parameter 'q' cannot be empty."
-        )
+            status_code=503, detail="Search engine is not ready.")
 
-    results = await hybrid_engine.search(q, k=k)
-    return SearchResponse(query=q, results=results)
+    cache_key = f"{q}_{lat}_{lng}_{max_dist_km}"
+    if cache_key in search_cache:
+        return search_cache[cache_key]
+
+    results_dict = await hybrid_engine.search(q, lat=lat, lng=lng, max_dist_km=max_dist_km)
+    response = SearchResponse(query=q, **results_dict)
+
+    search_cache[cache_key] = response
+    return response
+
+
+# --- RECOMMENDATION SYSTEM ENDPOINTS ---
+
+@app.get("/recommend/content-based", response_model=ContentRecommendationResponse, tags=["Recommender"])
+async def recommend_content(service_id: str, top_n: int = Query(default=5, ge=1, le=20)):
+    """Computes content-based recommendations using Sentence Transformer & FAISS."""
+    if hybrid_engine is None or faiss_manager is None:
+        raise HTTPException(status_code=503, detail="Search engine is not ready.")
+    
+    recs = await recommender.recommend_content_based(service_id, faiss_manager, hybrid_engine, top_n)
+    return ContentRecommendationResponse(service_id=service_id, recommendations=recs)
+
+
+@app.get("/recommend/collaborative/matrix", response_model=RatingMatrixResponse, tags=["Recommender"])
+def get_cf_matrix():
+    """Returns the current state of the sandbox ratings matrix."""
+    return recommender.get_matrix_data()
+
+
+@app.post("/recommend/collaborative/rate", tags=["Recommender"])
+def cf_update_rating(req: UpdateRatingRequest):
+    """Updates a single rating cell in the collaborative filtering matrix."""
+    recommender.update_rating(req.user, req.item_id, req.rating)
+    return {"message": "Rating updated successfully."}
+
+
+@app.post("/recommend/collaborative/reset", tags=["Recommender"])
+def cf_reset_matrix():
+    """Resets the collaborative ratings matrix back to seeded defaults."""
+    items = hybrid_engine.items if hybrid_engine else []
+    recommender.reset_matrix(items)
+    return {"message": "Rating matrix reset to seeded defaults."}
+
+
+@app.get("/recommend/collaborative/user-based", response_model=CollaborativeRecommendationResponse, tags=["Recommender"])
+def recommend_user_based(target_user: str, top_n: int = Query(default=5, ge=1, le=10)):
+    """Predicts ratings and recommends items using User-Based Collaborative Filtering."""
+    result = recommender.recommend_collaborative_user(target_user, top_n)
+    return result
+
+
+@app.get("/recommend/collaborative/item-based", response_model=CollaborativeRecommendationResponse, tags=["Recommender"])
+def recommend_item_based(target_user: str, top_n: int = Query(default=5, ge=1, le=10)):
+    """Predicts ratings and recommends items using Item-Based Collaborative Filtering."""
+    result = recommender.recommend_collaborative_item(target_user, top_n)
+    return result
+
