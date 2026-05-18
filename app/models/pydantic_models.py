@@ -1,6 +1,10 @@
 # FILE: app/models/pydantic_models.py
 from pydantic import BaseModel
+<<<<<<< HEAD
 from typing import List, Dict, Any, Optional
+=======
+from typing import List, Dict, Any
+>>>>>>> eaee55d441f248a9c8b8c1753f9a0c6e40ce403f
 
 
 class SearchResultItem(BaseModel):

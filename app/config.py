@@ -24,8 +24,13 @@ class Settings(BaseSettings):
 
     # --- Search Algorithm Tuning ---
     CATEGORY_BOOST: float = 0.1
+<<<<<<< HEAD
     SERVICE_NAME_WEIGHT: float = 0.6
     CATEGORY_NAME_WEIGHT: float = 0.3
+=======
+    SERVICE_NAME_WEIGHT: float = 0.5
+    CATEGORY_NAME_WEIGHT: float = 0.4
+>>>>>>> eaee55d441f248a9c8b8c1753f9a0c6e40ce403f
     SERVICE_DESCRIPTION_WEIGHT: float = 0.1
 
     # --- Predefined Data ---

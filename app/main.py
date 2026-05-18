@@ -1,23 +1,36 @@
 # FILE: app/main.py
+<<<<<<< HEAD
 # pyrefly: ignore [missing-import]
+=======
+>>>>>>> eaee55d441f248a9c8b8c1753f9a0c6e40ce403f
 from fastapi import FastAPI, HTTPException, Query
 from contextlib import asynccontextmanager
 import asyncio
 import logging
+<<<<<<< HEAD
 import os
+=======
+>>>>>>> eaee55d441f248a9c8b8c1753f9a0c6e40ce403f
 from cachetools import TTLCache
 from typing import Optional
 
 from app.config import settings
 from app.models.pydantic_models import (
+<<<<<<< HEAD
     SearchResponse, StatusResponse, HealthResponse, RefreshResponse, AutocompleteResponse,
     ContentRecommendationResponse, CollaborativeRecommendationResponse, RatingMatrixResponse, UpdateRatingRequest
+=======
+    SearchResponse, StatusResponse, HealthResponse, RefreshResponse, AutocompleteResponse
+>>>>>>> eaee55d441f248a9c8b8c1753f9a0c6e40ce403f
 )
 from app.services.data_loader import fetch_and_extract_items, fetch_one_service
 from app.services.encoder import create_blended_embeddings, get_model
 from app.models.faiss_manager import FaissManager
 from app.services.hybrid_search import HybridSearchEngine
+<<<<<<< HEAD
 from app.services.recommender import recommender
+=======
+>>>>>>> eaee55d441f248a9c8b8c1753f9a0c6e40ce403f
 from app.utils.persistence import load_items, save_items
 from app.utils.database import connect_to_mongo, close_mongo_connection, get_database
 from app.utils.locks import data_lock
@@ -80,10 +93,13 @@ async def _rebuild_search_engine_full():
 
     items = await fetch_and_extract_items()
     model_dim = get_model().get_sentence_embedding_dimension()
+<<<<<<< HEAD
 
     # Fetch real user booking interactions
     from app.services.data_loader import fetch_collaborative_matrix
     real_matrix = await fetch_collaborative_matrix()
+=======
+>>>>>>> eaee55d441f248a9c8b8c1753f9a0c6e40ce403f
 
     async with data_lock:
         faiss_manager = FaissManager(dim=model_dim)
@@ -96,9 +112,12 @@ async def _rebuild_search_engine_full():
             hybrid_engine = HybridSearchEngine(faiss_manager, items)
             save_items(items)
             faiss_manager.save()
+<<<<<<< HEAD
         
         # Initialize rating matrix in recommendation sandbox
         recommender.setup_collaborative_matrix(items if items else [], real_matrix=real_matrix)
+=======
+>>>>>>> eaee55d441f248a9c8b8c1753f9a0c6e40ce403f
         logger.info(f"Full engine rebuild complete with {len(items)} items.")
 
 # --- FastAPI Lifespan ---
@@ -117,10 +136,13 @@ async def lifespan(app: FastAPI):
         faiss_manager = FaissManager(dim=model_dim)
         if faiss_manager.load():
             hybrid_engine = HybridSearchEngine(faiss_manager, items)
+<<<<<<< HEAD
             # Initialize rating matrix in recommendation sandbox
             from app.services.data_loader import fetch_collaborative_matrix
             real_matrix = await fetch_collaborative_matrix()
             recommender.setup_collaborative_matrix(items, real_matrix=real_matrix)
+=======
+>>>>>>> eaee55d441f248a9c8b8c1753f9a0c6e40ce403f
             logger.info("Successfully loaded persisted search engine.")
         else:
             asyncio.create_task(_rebuild_search_engine_full())
@@ -157,7 +179,11 @@ app.add_middleware(
 # --- END OF NEW SECTION ---
 
 
+<<<<<<< HEAD
 @app.get("/", tags=["API"])
+=======
+@app.get("/", response_model=StatusResponse, tags=["Health"])
+>>>>>>> eaee55d441f248a9c8b8c1753f9a0c6e40ce403f
 def read_root():
     """Root Endpoint."""
     return {"message": "Anand Utsav ML Intelligence Backend is running successfully."}
@@ -194,6 +220,7 @@ def autocomplete(prefix: str):
 
 
 @app.get("/search", response_model=SearchResponse, tags=["Search"])
+<<<<<<< HEAD
 async def search(q: str, lat: Optional[float] = None, lng: Optional[float] = None, max_dist_km: float = 50.0):
     """Performs a simplified semantic search with optional location filtering."""
     if hybrid_engine is None:
@@ -257,3 +284,19 @@ def recommend_item_based(target_user: str, top_n: int = Query(default=5, ge=1, l
     result = recommender.recommend_collaborative_item(target_user, top_n)
     return result
 
+=======
+async def search(q: str):
+    """Performs a simplified semantic search."""
+    if hybrid_engine is None:
+        raise HTTPException(
+            status_code=503, detail="Search engine is not ready.")
+
+    if q in search_cache:
+        return search_cache[q]
+
+    results_dict = await hybrid_engine.search(q)
+    response = SearchResponse(query=q, **results_dict)
+
+    search_cache[q] = response
+    return response
+>>>>>>> eaee55d441f248a9c8b8c1753f9a0c6e40ce403f

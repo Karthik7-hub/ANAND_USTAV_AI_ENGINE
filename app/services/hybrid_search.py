@@ -13,27 +13,36 @@ class HybridSearchEngine:
         self.fm = faiss_manager
         self.items = items
         self.item_map = {item['_id']: item for item in items}
+<<<<<<< HEAD
         
         # Map MD5 hashed 64-bit int IDs from FAISS back to item objects
         from app.models.faiss_manager import id_to_int
         self.int_id_map = {id_to_int(item['_id']): item for item in items}
+=======
+>>>>>>> eaee55d441f248a9c8b8c1753f9a0c6e40ce403f
 
     def update_item_in_map(self, item: Dict[str, Any]):
         self.item_map[item['_id']] = item
         self.items = list(self.item_map.values())
+<<<<<<< HEAD
         
         from app.models.faiss_manager import id_to_int
         self.int_id_map[id_to_int(item['_id'])] = item
+=======
+>>>>>>> eaee55d441f248a9c8b8c1753f9a0c6e40ce403f
 
     def remove_item_from_map(self, item_id: str):
         if item_id in self.item_map:
             del self.item_map[item_id]
             self.items = list(self.item_map.values())
+<<<<<<< HEAD
             
             from app.models.faiss_manager import id_to_int
             hashed_id = id_to_int(item_id)
             if hashed_id in self.int_id_map:
                 del self.int_id_map[hashed_id]
+=======
+>>>>>>> eaee55d441f248a9c8b8c1753f9a0c6e40ce403f
 
     def get_autocomplete_suggestions(self, prefix: str, limit: int = 10) -> List[str]:
         prefix_lower = prefix.lower()
@@ -41,7 +50,11 @@ class HybridSearchEngine:
             "name", "").lower().startswith(prefix_lower)}
         return sorted(list(suggestions))[:limit]
 
+<<<<<<< HEAD
     async def search(self, query: str, lat: float = None, lng: float = None, max_dist_km: float = 50.0) -> Dict[str, Any]:
+=======
+    async def search(self, query: str) -> Dict[str, Any]:
+>>>>>>> eaee55d441f248a9c8b8c1753f9a0c6e40ce403f
         if not self.items:
             return {"categories": [], "services": []}
 
@@ -52,6 +65,7 @@ class HybridSearchEngine:
 
         ranked_results = self._compute_scores(
             indices[0].tolist(), distances[0].tolist())
+<<<<<<< HEAD
             
         # Optional Location Filtering
         if lat is not None and lng is not None:
@@ -83,6 +97,8 @@ class HybridSearchEngine:
                     filtered_results.append(res)
             ranked_results = filtered_results
 
+=======
+>>>>>>> eaee55d441f248a9c8b8c1753f9a0c6e40ce403f
         top_categories, top_services = self._separate_results(ranked_results)
 
         return {"categories": top_categories, "services": top_services}
@@ -106,6 +122,7 @@ class HybridSearchEngine:
     def _compute_scores(self, indices: List[int], distances: List[float]) -> List[Dict[str, Any]]:
         results = []
         for score, idx in zip(distances, indices):
+<<<<<<< HEAD
             if idx == -1:
                 continue
 
@@ -113,6 +130,12 @@ class HybridSearchEngine:
             if not item_object:
                 continue
 
+=======
+            if idx == -1 or idx >= len(self.items):
+                continue
+
+            item_object = self.items[idx]
+>>>>>>> eaee55d441f248a9c8b8c1753f9a0c6e40ce403f
             final_score = float(score)
 
             if item_object.get("isCategory"):
