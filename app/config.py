@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     )
 
     # --- Database Settings ---
-    MONGODB_URL: str = "mongodb://localhost:27017"
+    MONGODB_URL: str = "mongodb+srv://anandutsav:codenovus2025@anandutsav.lgnmx5i.mongodb.net"
     DATABASE_NAME: str = "anandutsav"
     COLLECTION_NAME: str = "services"
 
