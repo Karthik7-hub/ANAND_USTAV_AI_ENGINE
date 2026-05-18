@@ -178,6 +178,18 @@ async def trigger_refresh():
     )
 
 
+@app.get("/db-status", tags=["Admin"])
+async def db_status():
+    from motor.motor_asyncio import AsyncIOMotorClient
+    from app.config import settings
+    try:
+        client = AsyncIOMotorClient(settings.MONGODB_URL, serverSelectionTimeoutMS=3000)
+        await client.admin.command('ping')
+        return {"status": "connected", "database": settings.DATABASE_NAME}
+    except Exception as e:
+        return {"status": "failed", "error": str(e)}
+
+
 @app.get("/autocomplete", response_model=AutocompleteResponse, tags=["Search"])
 def autocomplete(prefix: str):
     if hybrid_engine is None:
