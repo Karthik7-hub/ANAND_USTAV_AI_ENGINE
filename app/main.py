@@ -138,6 +138,7 @@ app = FastAPI(title="Smart Search API", version="2.0.0", lifespan=lifespan)
 # --- CORS MIDDLEWARE CONFIGURATION ---
 origins = [
     "https://anand-utsav.vercel.app",  # Your production front-end
+    "https://anandutsav-backend.vercel.app",  # Production Vercel backend
     "http://localhost:5173",           # Your local development front-end (Vite default)
     "http://localhost:3000",           # Your local development front-end (Create React App default)
 ]
